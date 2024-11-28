@@ -1,0 +1,987 @@
+%  'out3'(must import it on the workspace) contains 'day', 'tick', and 'logprice'
+
+% Initialize results
+logReturns = []; % Store log returns for the selected method
+timeWeightedReturns = []; % Store time-weighted returns for the selected method
+
+% Step 1: Split Data by Day to Avoid Jumps Between Days
+uniqueDays = unique(out3.day);
+dailyData = {}; % Store daily data
+for i = 1:length(uniqueDays)
+    dailyData{i} = out3(out3.day == uniqueDays(i), :); % Extract data for each day
+end
+
+% Select the method to run
+useTimeWeightedReturns = false; % Set to true to calculate time-weighted returns
+useRegularSampling = false;     % Set to true to calculate regular sampling
+useInterpolation = false;      % Set to true to apply interpolation methods
+useBrownianBridge = true;     % Set to true to apply Brownian Bridge method
+
+% Define parameters for sampling
+samplingInterval = 0.0001; % Define sampling interval in ticks
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%% 1. Time-Weighted Returns %%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if useTimeWeightedReturns
+    for i = 1:length(dailyData)
+        dailyPrices = dailyData{i}.logprice;
+        dailyTicks = dailyData{i}.tick;
+
+        % Calculate log returns
+        logReturns = diff(dailyPrices);
+
+        % Calculate waiting times (assumed as 1 for normalized ticks)
+        timeDiffs = diff(dailyTicks);
+        
+        % Time-Weighted Returns Calculation
+        weightedReturns = logReturns .* timeDiffs; % Weight each return by the time difference
+        timeWeightedReturns = [timeWeightedReturns; weightedReturns]; % Concatenate for further analysis
+
+        
+
+        % Append to logReturns for statistical analysis
+        logReturns = [logReturns; weightedReturns]; % Append the results
+    end
+   % Plot time-weighted returns
+        figure;
+        plot(weightedReturns);
+        title(sprintf('Time-Weighted Returns for Day %d', uniqueDays(1)));
+        xlabel('Tick Number');
+        ylabel('Time-Weighted Log Returns');
+        grid on;
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%% 2. Regular Sampling %%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if useRegularSampling
+    for i = 1:length(dailyData)
+        dailyPrices = dailyData{i}.logprice;
+        dailyTicks = dailyData{i}.tick;
+
+        sampledPrices = dailyPrices(1:10:end); % Take every 10th log price
+        sampledTicks = dailyTicks(1:10:end); % Corresponding ticks
+
+        % Calculate log returns for sampled data
+        sampledLogReturns = diff(sampledPrices);
+        logReturns = [logReturns; sampledLogReturns]; % Append the results
+
+      
+    end
+      % Plot regularly sampled data
+        figure;
+        plot(sampledTicks, sampledPrices, 'g-', 'DisplayName', 'Regularly Sampled Data'); % Plot sampled prices
+        hold on;
+        scatter(dailyTicks, dailyPrices, 'ro', 'DisplayName', 'Actual Log Prices'); % Plot actual prices as red points
+        hold off;
+        title(sprintf('Regular Sampling for Day %d', uniqueDays(i)));
+        xlabel('Tick Number');
+        ylabel('Log Price');
+        legend; % Show legend
+        grid on;
+end
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%% 3. Interpolation Methods %%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if useInterpolation
+    for i = 1:length(dailyData)
+        dailyPrices = dailyData{i}.logprice;
+        dailyTicks = dailyData{i}.tick;
+
+        % Create a regular tick grid for interpolation
+        timeGrid = min(dailyTicks):samplingInterval:max(dailyTicks); 
+
+        % Initialize an array to hold log returns for this day
+        dailyLogReturns = []; 
+        
+        % Linear Interpolation
+        linearInterpPrices = interp1(dailyTicks, dailyPrices, timeGrid, 'linear');
+        
+        % Calculate log returns for linear interpolated prices
+        if ~isempty(linearInterpPrices) % Ensure the interpolated prices are not empty
+            linearLogReturns = diff(linearInterpPrices);
+            dailyLogReturns = [dailyLogReturns; linearLogReturns(:)]; % Ensure it's a column vector
+        end
+
+        
+
+        % Spline Interpolation
+        splineInterpPrices = interp1(dailyTicks, dailyPrices, timeGrid, 'spline');
+
+        % Calculate log returns for spline interpolated prices
+        if ~isempty(splineInterpPrices) % Ensure the interpolated prices are not empty
+            splineLogReturns = diff(splineInterpPrices);
+            dailyLogReturns = [dailyLogReturns; splineLogReturns(:)]; % Ensure it's a column vector
+        end
+
+       
+
+        % After processing, concatenate daily returns to overall logReturns if not empty
+        if ~isempty(dailyLogReturns)
+            % Print sizes for debugging
+            disp(['Size of dailyLogReturns for day ', num2str(uniqueDays(i)), ': ', num2str(size(dailyLogReturns))]);
+            disp(['Size of overall logReturns before concatenation: ', num2str(size(logReturns))]);
+            
+            % Append daily returns to overall logReturns
+            logReturns = [logReturns; dailyLogReturns]; % Append daily returns to overall logReturns
+        end
+    % Plot linear interpolated prices
+        figure;
+        plot(timeGrid, linearInterpPrices, 'g-', 'DisplayName', 'Linear Interpolation'); 
+        hold on;
+        scatter(dailyTicks, dailyPrices, 'ro', 'DisplayName', 'Actual Log Prices'); 
+        hold off;
+        title(sprintf('Linear Interpolation for Day %d', uniqueDays(i)));
+        xlabel('Tick');
+        ylabel('Interpolated Log Price');
+        legend; 
+        grid on;
+     % Plot spline interpolated prices
+        figure;
+        plot(timeGrid, splineInterpPrices, 'g-', 'DisplayName', 'Spline Interpolation'); 
+        hold on;
+        scatter(dailyTicks, dailyPrices, 'ro', 'DisplayName', 'Actual Log Prices'); 
+        hold off;
+        title(sprintf('Spline Interpolation for Day %d', uniqueDays(i)));
+        xlabel('Tick');
+        ylabel('Interpolated Log Price');
+        legend; 
+        grid on;
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%% 4. Brownian Bridge %%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if useBrownianBridge
+    for i = 1:length(dailyData)
+        dailyPrices = dailyData{i}.logprice;
+        dailyTicks = dailyData{i}.tick;
+
+        % Calculate variance of log prices
+        priceVariance = var(dailyPrices);
+        
+        % Initialize arrays for overall time grid and prices
+        overallTimeGrid = [];
+        overallBridgePrices = [];
+
+        % Iterate over daily prices to create the Brownian Bridge for each segment
+        for j = 1:length(dailyPrices)-1
+            s1 = dailyPrices(j); % Start price
+            s2 = dailyPrices(j+1); % End price
+            t1 = dailyTicks(j); % Start tick
+            t2 = dailyTicks(j+1); % End tick
+
+            % Create a time grid for this segment
+            segmentTimeGrid = linspace(t1, t2, round((t2 - t1) / samplingInterval) + 1);
+
+            % Initialize the bridge prices
+            bridgeSegment = zeros(size(segmentTimeGrid));
+
+            % Start the bridge at s1
+            bridgeSegment(1) = s1;
+
+            % Iterate over the time grid to calculate increments
+            for k = 2:length(segmentTimeGrid)
+                t = segmentTimeGrid(k);
+                
+                % Calculate the mean at time t
+                meanValue = s1 + (t - t1) / (t2 - t1) * (s2 - s1);
+                
+                % Calculate the variance at time t
+                variance = (t2 - t) * (t - t1) / (t2 - t1);
+                
+                % Use the calculated price variance directly
+                increment = randn * sqrt(priceVariance * (variance)); % Scale by the segment variance
+                
+                % Update the bridge price using the mean
+                bridgeSegment(k) = meanValue + increment;
+            end
+
+            % Ensure the last value ends at s2
+            bridgeSegment(end) = s2;
+
+            % Append segment time grid and bridge prices
+            overallTimeGrid = [overallTimeGrid, segmentTimeGrid];
+            overallBridgePrices = [overallBridgePrices, bridgeSegment];
+        end
+
+        % Calculate log returns for the Brownian bridge prices
+        bridgeLogReturns = diff(overallBridgePrices);
+
+        % Ensure bridgeLogReturns is a column vector
+        bridgeLogReturns = bridgeLogReturns(:); % Convert to a column vector
+
+        % Print sizes for debugging
+        disp(['Size of bridgeLogReturns for day ', num2str(uniqueDays(i)), ': ', num2str(size(bridgeLogReturns))]);
+        disp(['Size of overall logReturns before concatenation: ', num2str(size(logReturns))]);
+        
+        % Append the results
+        if ~isempty(bridgeLogReturns)
+            logReturns = [logReturns; bridgeLogReturns]; % Append the results
+        end
+
+       
+    end
+     % Plot the Brownian bridge interpolated prices along with actual log prices
+        figure;
+        plot(overallTimeGrid, overallBridgePrices, 'g-', 'DisplayName', 'Brownian Bridge'); 
+        hold on;
+        scatter(dailyTicks, dailyPrices, 'ro', 'DisplayName', 'Actual Log Prices'); 
+        hold off;
+        title(sprintf('Brownian Bridge Interpolation for Day %d', uniqueDays(i)));
+        xlabel('Tick');
+        ylabel('Interpolated Log Price');
+        legend; 
+        grid on;
+end
+
+%% 
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% STEP 2 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Initialize a cell array to store log returns for each day
+dailyLogReturns = cell(length(uniqueDays), 1);
+
+% Step 2: Analyze Daily Log Returns
+for i = 1:3
+    % Get log returns for the current day based on previously calculated values
+    if useTimeWeightedReturns
+        % Assuming time-weighted returns were calculated
+        dailyLogReturns{i} = logReturns; % Replace with the actual weighted returns if needed
+    elseif useRegularSampling
+        % If using regular sampling, log returns are already calculated
+        dailyLogReturns{i} = logReturns; % Replace with the actual sampled returns if needed
+    elseif useInterpolation
+        % If using interpolation, the last calculated log returns are for the last segment
+        dailyLogReturns{i} = logReturns; % Replace with the last calculated interpolated returns
+    elseif useBrownianBridge
+        % If using the Brownian Bridge method, the last calculated log returns are for the bridge prices
+        dailyLogReturns{i} = logReturns; % Replace with the last calculated Brownian bridge returns
+    else
+        dailyLogReturns{i} = []; % No returns calculated
+    end
+
+    % Check if daily log returns are not empty
+    if ~isempty(dailyLogReturns{i})
+        % Descriptive Statistics for the current day's log returns
+        meanReturn = mean(dailyLogReturns{i});
+        stdReturn = std(dailyLogReturns{i});
+        skewness_value = skewness(dailyLogReturns{i});
+        kurtosis_value = kurtosis(dailyLogReturns{i});
+
+        % Display descriptive statistics for the current day
+        fprintf('Descriptive Statistics of Log Returns for Day %d:\n', uniqueDays(i));
+        fprintf('Mean: %.5f\n', meanReturn);
+        fprintf('Standard Deviation: %.5f\n', stdReturn);
+        fprintf('Skewness: %.5f\n', skewness_value);
+        fprintf('Kurtosis: %.5f\n\n', kurtosis_value);
+
+        % Histogram of Log Returns
+        figure;
+        hold on;
+        histogram(dailyLogReturns{i}, 25, 'Normalization', 'pdf', 'FaceColor', 'b', 'EdgeColor', 'none');
+
+        % Plot Normal Distribution
+        x = linspace(min(dailyLogReturns{i}), max(dailyLogReturns{i}), 100);
+        normalPdf = normpdf(x, meanReturn, stdReturn);
+        plot(x, normalPdf, 'r-', 'LineWidth', 2, 'DisplayName', 'Normal Distribution');
+
+        xlabel('Log Returns');
+        ylabel('Density');
+        title(sprintf('Histogram of Log Returns for Day %d', uniqueDays(i)));
+        legend('Log Returns Histogram', 'Normal Distribution', 'Location', 'Best');
+        grid on;
+
+        % Kolmogorov-Smirnov Test for Normality
+        [h_ks, pValue_ks] = kstest((dailyLogReturns{i} - meanReturn) / stdReturn); % Standardize log returns
+
+        % Display K-S Test Results
+        fprintf('Kolmogorov-Smirnov Test Results for Day %d:\n', uniqueDays(i));
+        fprintf('--------------------------------------------------------\n');
+        fprintf('| Test                      | Statistic         | p-value        |\n');
+        fprintf('--------------------------------------------------------\n');
+        fprintf('| Kolmogorov-Smirnov       | %.5f             | %.5f          |\n', h_ks, pValue_ks);
+        fprintf('--------------------------------------------------------\n');
+
+        % Decision based on p-value
+        if pValue_ks < 0.01
+            fprintf('Kolmogorov-Smirnov Test: Reject H0 (not normally distributed).\n');
+        else
+            fprintf('Kolmogorov-Smirnov Test: Fail to reject H0 (normally distributed).\n');
+        end
+
+        % ADF Test for Stationarity
+        [h_adf, pValue_adf, stat, criticalValues] = adftest(dailyLogReturns{i});
+        fprintf('ADF Test for Stationarity for Day %d:\n', uniqueDays(i));
+        fprintf('Test Statistic: %.5f\n', stat);
+        fprintf('p-value: %.5f\n', pValue_adf);
+        fprintf('Critical Values:\n');
+        disp(criticalValues);
+        if h_adf == 0
+            fprintf('The log returns are stationary (fail to reject H0).\n');
+        else
+            fprintf('The log returns are non-stationary (reject H0).\n');
+        end
+
+        % ACF and PACF Analysis to identify autocorrelation patterns
+        figure;
+        subplot(2,1,1);
+        autocorr(dailyLogReturns{i}, 20); % ACF for 20 lags
+        title(sprintf('ACF of Log Returns for Day %d', uniqueDays(i)));
+
+        subplot(2,1,2);
+        parcorr(dailyLogReturns{i}, 20); % PACF for 20 lags
+        title(sprintf('PACF of Log Returns for Day %d', uniqueDays(i)));
+    else
+        fprintf('No log returns calculated for Day %d.\n', uniqueDays(i));
+    end
+end
+%% 
+
+
+
+
+%% 
+% Assuming 'out3' contains 'day', 'tick', and 'logprice'
+
+% Step 1: Extract daily log prices (daily closing log prices)
+uniqueDays = unique(out3.day); % Extract unique days
+dailyLogPrices = zeros(length(uniqueDays), 1); % Preallocate daily log prices
+
+for i = 1:length(uniqueDays)
+    % Find the last log price for each unique day
+    dailyLogPrices(i) = out3.logprice(out3.day == uniqueDays(i) & out3.tick == max(out3.tick(out3.day == uniqueDays(i))), 1); 
+end
+
+% Step 2: Calculate daily log returns
+logReturns = diff(dailyLogPrices); % Calculate log returns
+% Step 2: Plot the daily log prices
+figure;
+plot(uniqueDays, dailyLogPrices, 'b', 'DisplayName', 'Daily Log Prices');
+xlabel('Days');
+ylabel('Log Prices');
+title('Daily Closing Log Prices');
+legend('show');
+grid on;
+
+
+% Step 4: Plot the daily log returns
+figure;
+plot(uniqueDays(2:end), logReturns, 'r', 'DisplayName', 'Daily Log Returns');
+xlabel('Days');
+ylabel('Log Returns');
+title('Daily Log Returns');
+legend('show');
+grid on;
+
+
+% Assuming 'out3' contains 'day', 'tick', and 'logprice'
+
+% Step 1: Extract daily log prices (daily closing log prices)
+uniqueDays = unique(out3.day);
+dailyLogPrices = zeros(length(uniqueDays), 1);
+
+for i = 1:length(uniqueDays)
+    dailyLogPrices(i) = out3.logprice(out3.day == uniqueDays(i) & out3.tick == max(out3.tick(out3.day == uniqueDays(i))), 1);
+end
+
+% Step 2: Calculate daily log returns
+logReturns = diff(dailyLogPrices);
+
+% Split into training (70%) and testing (30%)
+trainSize = floor(0.7* length(logReturns));
+logReturns_train = logReturns(1:trainSize);
+logReturns_test = logReturns(trainSize+1:end);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 1. Filter the Non-Stationary Series to Get Z_t %%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Define window size for moving statistics
+windowSize = 4;
+
+% Training: Calculate local mean and variance for Z_t
+localMean_train = movmean(logReturns_train, windowSize);
+localStd_train = movstd(logReturns_train, windowSize);
+Z_t_train = (logReturns_train - localMean_train) ./ localStd_train;
+
+% Testing: Calculate local mean and variance on test data
+localMean_test = movmean(logReturns_test, windowSize);
+localStd_test = movstd(logReturns_test, windowSize);
+Z_t_test = (logReturns_test - localMean_test) ./ localStd_test;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 2. Perform VaR on Z_t for Training Data %%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+confidenceLevel = 0.95;
+VaR_threshold_train = quantile(Z_t_train, 1 - confidenceLevel);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 3. Reconstruct VaR for Original Log Returns %%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Training Data VaR
+VaR_filtered_reconstructed_train = VaR_threshold_train * localStd_train + localMean_train;
+
+% Testing Data VaR (reconstructed using test data statistics)
+VaR_filtered_reconstructed_test = VaR_threshold_train * localStd_test + localMean_test;
+
+% Plot Reconstructed VaR for comparison
+figure;
+plot(1:length(VaR_filtered_reconstructed_test), VaR_filtered_reconstructed_test, 'r-', 'DisplayName', 'Filtered Z_t VaR (Test)');
+hold on;
+plot(1:length(logReturns_test), logReturns_test, 'b-', 'DisplayName', 'Log Returns (Test)');
+xlabel('Time');
+ylabel('VaR / Log Returns');
+title('Filtered Z_t VaR vs Log Returns (Test Set)');
+legend('show');
+grid on;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 4. Backtest the VaR on Test Data %%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+numBreaches_filtered = sum(logReturns_test < VaR_filtered_reconstructed_test);
+breachPercentage_filtered = numBreaches_filtered / length(logReturns_test) * 100;
+
+fprintf('Backtest Result (Filtered Z_t VaR on Test): %.2f%% of the actual returns exceeded the VaR.\n', breachPercentage_filtered);
+if breachPercentage_filtered > (1 - confidenceLevel) * 100
+    fprintf('Filtered Z_t VaR underestimated risk on test data.\n');
+else
+    fprintf('Filtered Z_t VaR performed within expected limits on test data.\n');
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 5. Conditional Volatility with GARCH Model on Z_t %%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Manually Fit GARCH(1,1) Model on Training Data
+initialParams = [0.1, 0.1, 0.8];  % Initial parameters for GARCH(1,1)
+logReturnsSquared_train = Z_t_train.^2;  % Squared returns for GARCH
+
+logLikelihood = @(params) garchLogLikelihood(params, logReturnsSquared_train);
+options = optimoptions('fmincon', 'Display', 'iter', 'Algorithm', 'interior-point', 'MaxIter', 1000, 'TolFun', 1e-5, 'TolX', 1e-8);
+[paramEstimates, ~, ~, ~, ~, hessian] = fmincon(logLikelihood, initialParams, [], [], [], [], [0, 0, 0], [Inf, 1, 1], [], options);
+
+alpha0_est = paramEstimates(1);
+alpha1_est = paramEstimates(2);
+beta1_est = paramEstimates(3);
+stdErrors = sqrt(diag(pinv(hessian)));
+
+% Display parameter estimates
+fprintf('GARCH(1,1) Estimated Parameters:\n');
+fprintf('alpha0 (omega): %.5f (Std Error: %.5f)\n', alpha0_est, stdErrors(1));
+fprintf('alpha1 (alpha): %.5f (Std Error: %.5f)\n', alpha1_est, stdErrors(2));
+fprintf('beta1 (beta): %.5f (Std Error: %.5f)\n', beta1_est, stdErrors(3));
+
+% Compute conditional variance for GARCH(1,1) on test data
+T = length(Z_t_test);
+v_test = zeros(T, 1);
+v_test(1) = var(Z_t_train);  % Initialize with variance of training data
+
+for t = 2:T
+    v_test(t) = alpha0_est + alpha1_est * Z_t_test(t-1)^2 + beta1_est * v_test(t-1);
+end
+
+% GARCH-based VaR for test data
+zValue=norminv(1 - confidenceLevel);
+% VaR for the stationary series Z_t
+VaR_GARCH_Z = zValue * sqrt(v_test);  % VaR based on GARCH volatility on Z_t
+
+% Step 6: Reconstruct VaR using local mean and local variance
+VaR_GARCH_test = VaR_GARCH_Z .* localStd_test + localMean_test;  % Reconstruct the VaR
+
+% Plot GARCH-based VaR against log returns
+figure;
+plot(1:length(logReturns_test), logReturns_test, 'b-', 'DisplayName', 'Log Returns (Test)');
+hold on;
+plot(1:length(VaR_GARCH_test), VaR_GARCH_test, 'g', 'DisplayName', 'GARCH-based VaR (Test)');
+xlabel('Time');
+ylabel('Returns / VaR');
+title('GARCH-based VaR vs Log Returns (Test Set)');
+legend('show');
+grid on;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% 6. Backtest GARCH VaR on Test Data %%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+numBreaches_GARCH = sum(logReturns_test < VaR_GARCH_test);
+breachPercentage_GARCH = numBreaches_GARCH / length(logReturns_test) * 100;
+
+fprintf('Backtest Result (GARCH-based VaR on Test): %.2f%% of the actual returns exceeded the VaR.\n', breachPercentage_GARCH);
+if breachPercentage_GARCH > (1 - confidenceLevel) * 100
+    fprintf('GARCH-based VaR underestimated risk on test data.\n');
+else
+    fprintf('GARCH-based VaR performed within expected limits on test data.\n');
+end
+
+% Custom Log-Likelihood Function for GARCH(1,1)
+function LL = garchLogLikelihood(params, logReturnsSquared)
+    alpha0 = params(1);
+    alpha1 = params(2);
+    beta1 = params(3);
+    
+    T = length(logReturnsSquared);
+    sigma2 = zeros(T, 1);
+    sigma2(1) = var(logReturnsSquared);  % Initialize variance with sample variance
+    
+    for t = 2:T
+        sigma2(t) = alpha0 + alpha1 * logReturnsSquared(t-1) + beta1 * sigma2(t-1);
+    end
+    
+    LL = -0.5 * sum(log(sigma2) + logReturnsSquared ./ sigma2);
+    LL = -LL;
+end
+
+
+
+
+
+%% Diebold-Mariano Test Between Filtered VaR and GARCH-based VaR
+
+% Define the loss differential between the two VaR series
+lossDiff = (logReturns_test < VaR_filtered_reconstructed_test) - (logReturns_test < VaR_GARCH_test);
+
+% Step 1: Calculate the mean of the loss differential
+meanLossDiff = mean(lossDiff);
+
+% Step 2: Calculate the variance of the loss differential
+varianceLossDiff = var(lossDiff);
+
+% Step 3: Calculate the test statistic for the Diebold-Mariano test
+n = length(lossDiff);
+DM_stat = meanLossDiff / sqrt(varianceLossDiff / n);
+
+% Step 4: Calculate the p-value for the DM test (assuming normal distribution)
+pValue_DM = 2 * (1 - normcdf(abs(DM_stat)));
+
+% Display the results of the DM test
+fprintf('Diebold-Mariano Test Statistic: %.5f\n', DM_stat);
+fprintf('p-value for Diebold-Mariano Test: %.5f\n', pValue_DM);
+
+% Interpretation
+if pValue_DM < 0.05
+    fprintf('Significant difference in predictive accuracy between Filtered Z_t VaR and GARCH-based VaR (p-value = %.5f).\n', pValue_DM);
+else
+    fprintf('No significant difference in predictive accuracy between Filtered Z_t VaR and GARCH-based VaR (p-value = %.5f).\n', pValue_DM);
+end
+
+%% Pearson Correlation Between Filtered Z_t VaR and GARCH-based VaR on Test Data
+
+% Calculate Pearson correlation coefficient between the two VaR estimates
+correlationCoefficient = corr(VaR_filtered_reconstructed_test, VaR_GARCH_test);
+
+% Display the correlation result
+fprintf('Pearson Correlation between Filtered Z_t VaR and GARCH-based VaR (Test Set): %.5f\n', correlationCoefficient);
+
+%% Plotting Cumulative Log Returns for Each Day (For Visualization)
+
+% Assuming 'uniqueDays' and 'dailyLogReturns' are available from earlier steps
+
+% Initialize cumulative returns for each day
+cumulativeLogReturns = cell(length(uniqueDays), 1);  % Store cumulative log returns for each day
+
+% Loop through daily high-frequency log returns and accumulate
+for i = 1:length(uniqueDays)
+    if ~isempty(dailyLogReturns{i}) % Ensure there are log returns for the day
+        cumulativeLogReturns{i} = cumsum(dailyLogReturns{i});  % Calculate cumulative returns
+    else
+        cumulativeLogReturns{i} = []; % Handle cases with no data
+    end
+end
+
+
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% Accumulate High-Frequency Log Returns %%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for i = 1:length(dailyLogReturns)
+    if ~isempty(dailyLogReturns{i})
+        cumulativeLogReturns{i} = cumsum(dailyLogReturns{i}); % Calculate cumulative log returns
+    else
+        cumulativeLogReturns{i} = []; % Handle cases with no data
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% Plot Cumulative Log Returns for Each Day %%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ i = 1;
+    if ~isempty(cumulativeLogReturns{i})
+        figure;
+        plot(cumulativeLogReturns{i}, 'b-', 'DisplayName', 'Cumulative Log Returns');
+        title(sprintf('Day %d: Cumulative Log Returns', uniqueDays(i)));
+        xlabel('Tick Number');
+        ylabel('Cumulative Log Returns');
+        grid on;
+    end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%% 2nd part (FPCA) %%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Assuming 'out3' contains 'day', 'tick', and 'logprice'
+
+% Initialize results
+logReturns = []; % Store log returns for the selected method
+timeWeightedReturns = []; % Store time-weighted returns for the selected method
+dailyLogReturns = {}; % Cell to store log returns for each day
+cumulativeLogReturns = {}; % Cell to store cumulative log returns for each day
+
+% Step 1: Split Data by Day to Avoid Jumps Between Days
+uniqueDays = unique(out3.day);
+dailyData = {}; % Store daily data for each day
+
+for i = 1:length(uniqueDays)
+    dailyData{i} = out3(out3.day == uniqueDays(i), :); % Extract data for each day
+end
+
+% Select the method to run
+useBrownianBridge = true;     % Set to true to apply Brownian Bridge method
+
+% Define parameters for sampling
+samplingInterval = 0.0001; % Define sampling interval in ticks
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%. Brownian Bridge %%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+if useBrownianBridge
+    for i = 1:length(dailyData)
+        dailyPrices = dailyData{i}.logprice;
+        dailyTicks = dailyData{i}.tick;
+
+        % Calculate variance of log prices
+        priceVariance = var(dailyPrices);
+
+        overallTimeGrid = [];
+        overallBridgePrices = [];
+
+        % Iterate over daily prices to create Brownian Bridge for each segment
+        for j = 1:length(dailyPrices)-1
+            s1 = dailyPrices(j);
+            s2 = dailyPrices(j+1);
+            t1 = dailyTicks(j);
+            t2 = dailyTicks(j+1);
+
+            % Time grid for the segment
+            segmentTimeGrid = linspace(t1, t2, round((t2 - t1) / samplingInterval) + 1);
+            bridgeSegment = zeros(size(segmentTimeGrid));
+            bridgeSegment(1) = s1;
+
+            for k = 2:length(segmentTimeGrid)
+                t = segmentTimeGrid(k);
+                meanValue = s1 + (t - t1) / (t2 - t1) * (s2 - s1);
+                variance = (t2 - t) * (t - t1) / (t2 - t1);
+                increment = randn * sqrt(priceVariance * (variance));
+                bridgeSegment(k) = meanValue + increment;
+            end
+
+            bridgeSegment(end) = s2;
+
+            overallTimeGrid = [overallTimeGrid, segmentTimeGrid];
+            overallBridgePrices = [overallBridgePrices, bridgeSegment];
+        end
+
+        % Calculate log returns for the Brownian bridge
+        bridgeLogReturns = diff(overallBridgePrices);
+        dailyLogReturns{i} = bridgeLogReturns; % Store Brownian bridge log returns
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% Accumulate High-Frequency Log Returns %%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for i = 1:length(dailyLogReturns)
+    if ~isempty(dailyLogReturns{i})
+        cumulativeLogReturns{i} = cumsum(dailyLogReturns{i}); % Calculate cumulative log returns
+    else
+        cumulativeLogReturns{i} = []; % Handle cases with no data
+    end
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% Plot Cumulative Log Returns for Each Day %%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for i = 1:3 % Limit to the first 3 days for visualization
+    if ~isempty(cumulativeLogReturns{i})
+        figure;
+        plot(cumulativeLogReturns{i}, 'b-', 'DisplayName', 'Cumulative Log Returns');
+        title(sprintf('Day %d: Cumulative Log Returns', uniqueDays(i)));
+        xlabel('Tick Number');
+        ylabel('Cumulative Log Returns');
+        grid on;
+    end
+end
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% FPCA on Cumulative Log Returns %%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Step 1: Interpolate Data and Represent in Fourier Basis
+numDays = length(cumulativeLogReturns);
+ticksPerDay = min(cellfun(@length, cumulativeLogReturns)); % Ensure consistent dimensions
+cumulativeLogReturns = cellfun(@(x) x(1:ticksPerDay), cumulativeLogReturns, 'UniformOutput', false);
+
+% Combine all days into a matrix
+dataMatrix = cell2mat(cumulativeLogReturns');
+
+% Estimate the mean function (average across days)
+meanFunction = mean(dataMatrix, 2);
+
+% Center the data by subtracting the mean function
+centeredData = dataMatrix - meanFunction;
+
+% Define the Fourier basis
+nbasis = 20; % Number of Fourier basis functions to use
+fourierBasisFunctions = zeros(ticksPerDay, nbasis);
+timePoints = linspace(0, 1, ticksPerDay)'; % Time points normalized between 0 and 1
+for k = 1:nbasis
+    if mod(k, 2) == 0
+        % Cosine basis
+        fourierBasisFunctions(:, k) = cos((k/2) * pi * timePoints);
+    else
+        % Sine basis
+        fourierBasisFunctions(:, k) = sin(((k + 1)/2) * pi * timePoints);
+    end
+end
+
+% Step 2: Project centered data onto Fourier basis to get coefficients
+fourierCoefficients = centeredData * fourierBasisFunctions;
+
+% Step 3: Estimate Mean Function and Center Data
+meanCoefficients = mean(fourierCoefficients, 1);
+centeredCoefficients = fourierCoefficients - meanCoefficients;
+
+% Step 4: Estimate Covariance Matrix of Fourier Coefficients
+covarianceMatrix = (centeredCoefficients' * centeredCoefficients) / numDays;
+
+% Step 5: Perform Eigen Decomposition on Covariance Matrix
+[eigenVectors, eigenValuesMatrix] = eig(covarianceMatrix);
+
+% Extract eigenvalues and sort them in descending order
+eigenValues = diag(eigenValuesMatrix);
+[sortedEigenValues, indices] = sort(eigenValues, 'descend');
+eigenVectors = eigenVectors(:, indices);
+
+% Select the first few eigenfunctions to use for FPCA
+numComponents = 4;
+eigenVectors = eigenVectors(:, 1:numComponents);
+sortedEigenValues = sortedEigenValues(1:numComponents);
+
+% Reconstruct eigenfunctions in the original domain
+eigenFunctions = fourierBasisFunctions * eigenVectors;
+
+% Ensure eigenfunctions start at zero
+for i = 1:numComponents
+    eigenFunctions(:, i) = eigenFunctions(:, i) - eigenFunctions(1, i);
+end
+
+% Step 6: Project the centered coefficients onto the eigenvectors to get principal component scores
+scores = centeredCoefficients * eigenVectors;
+
+% Plot the First Four Principal Components on the Same Plot
+figure;
+plot(scores(:, 1), 'r-', 'LineWidth', 1.5, 'DisplayName', 'Principal Component 1');
+hold on;
+plot(scores(:, 2), 'b-', 'LineWidth', 1.5, 'DisplayName', 'Principal Component 2');
+plot(scores(:, 3), 'g-', 'LineWidth', 1.5, 'DisplayName', 'Principal Component 3');
+plot(scores(:, 4), 'k-', 'LineWidth', 1.5, 'DisplayName', 'Principal Component 4');
+hold off;
+title('First Four Principal Components of Smoothed Cumulative Log Returns');
+xlabel('Day Number');
+ylabel('Principal Component Value');
+legend;
+grid on;
+
+% Plot the First Few Eigenfunctions on the Same Plot
+figure;
+plot(eigenFunctions(:, 1), 'r-', 'LineWidth', 1.5, 'DisplayName', 'Eigenfunction 1');
+hold on;
+plot(eigenFunctions(:, 2), 'b-', 'LineWidth', 1.5, 'DisplayName', 'Eigenfunction 2');
+plot(eigenFunctions(:, 3), 'g-', 'LineWidth', 1.5, 'DisplayName', 'Eigenfunction 3');
+plot(eigenFunctions(:, 4), 'k-', 'LineWidth', 1.5, 'DisplayName', 'Eigenfunction 4');
+hold off;
+title('First Four Eigenfunctions');
+xlabel('Tick Number');
+ylabel('Eigenfunction Value');
+legend;
+grid on;
+
+% Display the Principal Components
+disp('Principal Components (first 3):');
+disp(scores(:, 1:3));
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% Normality Test and White Noise Assessment %%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Step 7: Test Normality of Principal Component Scores
+for k = 1:numComponents
+    [h, pValue] = kstest((scores(:, k) - mean(scores(:, k))) / std(scores(:, k))); % Normality test on standardized scores
+    fprintf('Normality test for Principal Component %d: h = %d, p-value = %.4f\n', k, h, pValue);
+    if h == 0
+        fprintf('Principal Component %d follows a normal distribution (p-value = %.4f)\n', k, pValue);
+    else
+        fprintf('Principal Component %d does not follow a normal distribution (p-value = %.4f)\n', k, pValue);
+    end
+end
+
+% Step 8: Assess White Noise Property (Autocorrelation Function)
+for k = 1:numComponents
+    figure;
+    autocorr(scores(:, k), 'NumLags', 20);
+    title(sprintf('Autocorrelation of Principal Component %d', k));
+    xlabel('Lag');
+    ylabel('Autocorrelation');
+end
+
+% Estimate noise variance as the average variance of the residuals after reconstructing the data
+reconstructedData = eigenFunctions * scores';
+residuals = centeredData - reconstructedData';
+noiseVariance = mean(var(residuals, 0, 2));
+fprintf('Estimated noise variance: %.4f\n', noiseVariance);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% Quality of Fit Assessment as Function of p %%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Step 9: Assess the Quality of the Fit by Varying p
+explainedVariance = cumsum(sortedEigenValues) / sum(sortedEigenValues);
+
+% Plot the Cumulative Explained Variance
+figure;
+plot(1:length(explainedVariance), explainedVariance, 'b-o', 'LineWidth', 1.5);
+title('Cumulative Explained Variance as Function of p');
+xlabel('Number of Components (p)');
+ylabel('Cumulative Explained Variance');
+grid on;
+
+% Display the explained variance for different values of p
+fprintf('Explained Variance for different values of p:\n');
+for p = 1:length(explainedVariance)
+    fprintf('p = %d: %.4f\n', p, explainedVariance(p));
+end
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%% Time Series Modeling for Forecasting %%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Step 9: Split the Data into Training and Testing Sets (70%-30% Split)
+nTrain = floor(0.7 * numDays);
+trainScores = scores(1:nTrain, :);
+testScores = scores(nTrain+1:end, :);
+
+% Step 10: Forecasting Using Custom AR(1) Model
+forecastHorizon = 5; % Number of steps to forecast
+predictedScores = zeros(forecastHorizon, numComponents);
+
+for k = 1:numComponents
+    % Standardize the data to help with scaling issues
+    data = (trainScores(:, k) - mean(trainScores(:, k))) / std(trainScores(:, k)); 
+    T = length(data);
+
+    % Define initial parameters [alpha, phi, sigma^2] for AR(1)
+    initialGuess = [mean(data), 0.5, var(data)]; % [Intercept, AR coefficient, Variance]
+
+    % Log-likelihood function for AR(1)
+    logLikelihood = @(params) -(-T/2 * log(2*pi*params(3)) ...
+        - sum((data(2:end) - params(1) - params(2) * data(1:end-1)).^2) / (2 * params(3)));
+
+    % Optimize to find parameters that maximize the log-likelihood
+    options = optimset('fminunc');
+    [paramsOpt, ~, exitflag, output, ~, hessian] = fminunc(logLikelihood, initialGuess, options);
+
+    % Check if optimization converged
+    if exitflag <= 0
+        disp(['Warning: Optimization for Component ', num2str(k), ' may not have converged.']);
+        disp(output.message);
+    end
+
+    % Extract estimated parameters
+    alpha = paramsOpt(1); % Intercept
+    phi = paramsOpt(2);   % AR(1) coefficient
+    sigma2 = paramsOpt(3); % Variance of noise
+
+    % Calculate Standard Errors, T-Statistics, and P-Values
+    try
+        % Calculate standard errors from the Hessian, if available
+        stdErrors = sqrt(diag(inv(hessian)));
+        tStats = paramsOpt ./ stdErrors;
+        pValues = 2 * (1 - normcdf(abs(tStats))); % Two-tailed p-value
+    catch
+        disp(['Warning: Hessian inversion failed for Component ', num2str(k), '.']);
+        stdErrors = NaN(size(paramsOpt));
+        tStats = NaN(size(paramsOpt));
+        pValues = NaN(size(paramsOpt));
+    end
+
+    % Display results for this component
+    fprintf('\nResults for Principal Component %d:\n', k);
+    resultsTable = table(paramsOpt', stdErrors, tStats, pValues, ...
+        'VariableNames', {'Value', 'StandardError', 'TStatistic', 'PValue'}, ...
+        'RowNames', {'Constant', 'AR{1}', 'Variance'});
+    disp(resultsTable);
+
+    % Forecast future values based on the estimated parameters
+    yF = zeros(forecastHorizon, 1);
+    yF(1) = alpha + phi * data(end); % Initial forecast using last data point
+    
+    for t = 2:forecastHorizon
+        yF(t) = alpha + phi * yF(t-1);
+    end
+    predictedScores(:, k) = yF * std(trainScores(:, k)) + mean(trainScores(:, k)); % Unscale forecasted scores
+end
+
+% Extend the mean function for the forecast horizon
+meanFunctionExtended = repmat(meanFunction, 1, forecastHorizon);
+
+% Reconstruct the Forecasted Data using the Functional Model
+eigenFunctionsResampled = interp1(linspace(0, 1, size(eigenFunctions, 1)), ...
+                                  eigenFunctions(:, 1:numComponents), ...
+                                  linspace(0, 1, size(meanFunctionExtended, 1)));
+reconstructedForecasts = meanFunctionExtended + eigenFunctionsResampled * predictedScores';
+
+% Plot the Forecasted Data
+figure;
+plot(reconstructedForecasts, 'LineWidth', 1.5);
+title('Forecasted Data for Next 5 Steps');
+xlabel('Tick Number');
+ylabel('Forecasted Value');
+grid on;
+
+
+% Evaluate Prediction Performance
+for k = 1:numComponents
+    % Calculate forecasts over test data length using the estimated parameters
+    yPred = zeros(length(testScores(:, k)), 1);
+    yPred(1) = alpha + phi * data(end); % Initial prediction using last training data point
+    for t = 2:length(testScores(:, k))
+        yPred(t) = alpha + phi * yPred(t-1);
+    end
+    
+    % Unscale the predicted values back to the original scale
+    yPred = yPred * std(trainScores(:, k)) + mean(trainScores(:, k));
+    
+    residuals = testScores(:, k) - yPred;
+    mse = mean(residuals.^2);
+    fprintf('Mean Squared Error for Principal Component %d: %.4f\n', k, mse);
+end
